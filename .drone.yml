@@ -1,0 +1,37 @@
+---
+kind: pipeline
+type: kubernetes
+name: build
+
+trigger:
+  event: [push]
+  branch: [main]
+
+_docker_defaults: &docker_defaults
+  image: plugins/docker
+  settings:
+    username: { from_secret: quay_username }
+    password: { from_secret: quay_password }
+    registry: quay.io
+    repo: quay.io/zebbra/tt-test
+    mtu: 1316
+
+steps:
+  - name: builder
+    <<: *docker_defaults
+    settings:
+      tags: builder
+      target: builder
+      cache_from:
+        - quay.io/zebbra/tt-test:builder
+
+  - name: release
+    <<: *docker_defaults
+    settings:
+      build_args_from_env:
+        - DRONE_COMMIT_SHA
+      tags: 'latest,git-${DRONE_COMMIT_SHA:0:7}'
+      cache_from:
+        - quay.io/zebbra/tt-test:builder
+        - quay.io/zebbra/tt-test:latest
+        - quay.io/zebbra/tt-test:git-${DRONE_COMMIT_SHA:0:7}
