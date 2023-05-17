@@ -1,8 +1,13 @@
+if (process.dev) process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'
+
 import destr from 'destr'
 import { useLogger } from '@nuxt/kit'
+
 import type { FetchError } from 'ofetch'
 
-import type { EndpointFetchOptions } from '../../composables/use-tt'
+import { deserializeMaybeEncodedBody } from '../../utils/use-tt'
+
+import type { EndpointFetchOptions } from '../../types/use-tt'
 
 const logger = useLogger('tt-api')
 
@@ -15,8 +20,7 @@ export default defineEventHandler(async (event) => {
 
   const { path, query, headers, body, ...fetchOptions } = _body
 
-  const baseURL = query?.backendUrl || useRuntimeConfig().public.backendUrl
-  delete query?.backendUrl
+  const baseURL = new Headers(headers).get('TT_BACKEND_URL') || useRuntimeConfig().public.backendUrl
 
   try {
     return await $fetch(path!, {
@@ -25,7 +29,7 @@ export default defineEventHandler(async (event) => {
       query,
       headers,
       cookies: parseCookies(event),
-      body,
+      ...(body && { body: await deserializeMaybeEncodedBody(body) }),
       onRequest(context) {
         logger.info('onRequest', context)
       },

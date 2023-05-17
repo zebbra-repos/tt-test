@@ -2,55 +2,26 @@ import { hash } from 'ohash'
 
 import type { AsyncData, AsyncDataOptions } from 'nuxt/app'
 import type { FetchError } from 'ofetch'
-import type { NitroFetchOptions } from 'nitropack'
 
-export type MaybeRef<T> = T | Ref<T>
-export type MaybeRefOrGetter<T> = MaybeRef<T> | (() => T)
-export type EndpointFetchOptions = NitroFetchOptions<string> & {
-  path: string
-}
-
-type ComputedOptions<T extends Record<string, any>> = {
-  [K in keyof T]: T[K] extends Function ? T[K] : T[K] extends Record<string, any> ? ComputedOptions<T[K]> | MaybeRef<T[K]> : MaybeRef<T[K]>
-}
-
-export type UseApiDataOptions<T> = AsyncDataOptions<T> &
-  Pick<ComputedOptions<NitroFetchOptions<string>>, 'onRequest' | 'onRequestError' | 'onResponse' | 'onResponseError' | 'query' | 'headers' | 'method'> & {
-    body?: MaybeRef<string | Record<string, any> | FormData | null | undefined>
-  }
-
-export type UseTTData = <T>(path: MaybeRefOrGetter<string>, opts?: UseApiDataOptions<T>) => AsyncData<T, FetchError>
-
-export const DEV_TT_HEADERS = {
-  'x-rp-username': 'rothm',
-  'x-rp-user-company': 'SPIE ICS',
-  'x-rp-user-dept': 'superuser',
-  'x-rp-apps': 'xxxxxxxxxx_tt_admin',
-  'x-rp-user-dn': 'uid=rothm,o=kaio,ou=people,dc=net,dc=be,dc=ch',
-  'x-rp-user-groups': 'conusr,cmw,ls-benet-zabbix-rw,diradm,magic-button,zar,netdisco,ls-benet-oxidized-rw,srvadm,map,prolix,netop',
-}
+import { EndpointFetchOptions, MaybeRefOrGetter, UseApiDataOptions } from '~/types/use-tt'
 
 export function useTTData<T>(path: MaybeRefOrGetter<string>, opts: UseApiDataOptions<T> = {}) {
   const _path = computed(() => toValue(path))
-  const { server, lazy, default: defaultFn, transform, pick, watch, immediate, query, headers, method, body, ...fetchOptions } = opts
-
-  const _query = computed(() => {
-    const val = toValue(query) || {}
-    val.backendUrl = useAppConfig().backendUrl
-    return val
-  })
+  const { server, lazy, default: defaultFn, transform, pick, watch: watchSources, immediate, query, headers, method, body, cache = true, ...fetchOptions } = opts
 
   const _fetchOptions = reactive(fetchOptions)
 
-  const _headers = {
+  const _headers = computed(() => ({
+    TT_BACKEND_URL: useAppConfig().backendUrl,
     ...(process.dev ? DEV_TT_HEADERS : {}),
     ...useRequestHeaders(['cookie']),
     ...headersToObject(toValue(headers)),
-  }
+    // cookie: 'mod_auth_openidc_session=99203a30-c7c5-4ca0-a7cc-ee426c926c51',
+  }))
 
   const _endpointFetchOptions: EndpointFetchOptions = reactive({
     path: _path,
-    query: _query,
+    query,
     headers: _headers,
     method,
     body,
@@ -62,25 +33,41 @@ export function useTTData<T>(path: MaybeRefOrGetter<string>, opts: UseApiDataOpt
     default: defaultFn,
     transform,
     pick,
-    watch: [_endpointFetchOptions, ...(watch || [])],
+    watch: [_endpointFetchOptions, ...(watchSources || [])],
     immediate,
   }
 
   let controller: AbortController
-  const key = computed(() => `$api${hash(['tt', _path.value, toValue(query), toValue(method), ...[toValue(body)]])}`)
+  const key = computed(() => `$api${hash(['tt', _path.value, toValue(query), toValue(method), ...(isFormData(toValue(body)) ? [] : [toValue(body)])])}`)
 
   return useAsyncData<T, FetchError>(
     key.value,
-    async () => {
+    async (nuxt) => {
       controller?.abort?.()
+
+      // Workaround to persist response client-side
+      // https://github.com/nuxt/nuxt/issues/15445
+      if ((nuxt!.isHydrating || cache) && key.value in nuxt!.payload.data) {
+        return nuxt!.payload.data[key.value]
+      }
+
       controller = typeof AbortController !== 'undefined' ? new AbortController() : ({} as AbortController)
 
-      return (await globalThis.$fetch<T>('/api/tt', {
+      const result = (await globalThis.$fetch<T>('/api/tt', {
         ..._fetchOptions,
         signal: controller.signal,
         method: 'POST',
-        body: _endpointFetchOptions,
+        body: {
+          ..._endpointFetchOptions,
+          body: await serializeMaybeEncodedBody(_endpointFetchOptions.body),
+        } satisfies EndpointFetchOptions,
       })) as T
+
+      if (cache) {
+        nuxt!.payload.data[key.value] = result
+      }
+
+      return result
     },
     _asyncDataOptions
   ) as AsyncData<T, FetchError>

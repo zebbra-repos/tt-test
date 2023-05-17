@@ -20,7 +20,7 @@
   </section>
   <section>
     <h2>Client side tt request</h2>
-    <button @click="onButtonClick">Trigger</button>
+    <button @click="refresh()">Trigger</button>
     <p v-if="clientPending">Loading...</p>
     <h3>Data:</h3>
     <pre>{{ clientData }}</pre>
@@ -31,6 +31,10 @@
     <h2>Change backend url</h2>
     <button @click="changeBackendUrl">Change</button>
   </section>
+  <section>
+    <h2>Change query</h2>
+    <button @click="changeQuery">Change</button>
+  </section>
 </template>
 
 <script setup lang="ts">
@@ -38,21 +42,40 @@ const headers = useState('header', () => useRequestHeaders())
 
 const { data: serverData, error: serverError } = await useTTData('/sbr/getSettings')
 
-const clientData = ref<any>(null)
-const clientError = ref<any>(null)
+const clientQuery = reactive<any>({})
 const clientPending = ref(false)
-async function onButtonClick() {
-  clientPending.value = true
-  const { data, error } = await useTTData('/sbr/getSettings')
-  clientPending.value = false
-  clientData.value = data
-  clientError.value = error
-}
+const {
+  data: clientData,
+  error: clientError,
+  pending,
+  refresh,
+} = useTTData('/sbr/getSettings', {
+  query: clientQuery,
+  server: false,
+  immediate: false,
+  cache: false,
+})
+
+watch(pending, (val) => {
+  clientPending.value = val
+})
 
 function changeBackendUrl() {
-  const newUrl = prompt('Enter new backend url', useAppConfig().backendUrl)
+  let value = useAppConfig().backendUrl
+
+  if (value.includes('127.0.0.1')) {
+    value = value.replace('127.0.0.1', '0.0.0.0')
+  } else if (value.includes('0.0.0.0')) {
+    value = value.replace('0.0.0.0', '127.0.0.1')
+  }
+
+  const newUrl = prompt('Enter new backend url', value)
   if (newUrl) {
     useAppConfig().backendUrl = newUrl
   }
+}
+
+function changeQuery() {
+  clientQuery.foo = new Date().toISOString()
 }
 </script>
