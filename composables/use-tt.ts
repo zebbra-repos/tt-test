@@ -34,10 +34,6 @@ export function useTTData<T>(path: MaybeRefOrGetter<string>, opts: UseApiDataOpt
   const _path = computed(() => toValue(path))
   const { server, lazy, default: defaultFn, transform, pick, watch, immediate, query, headers, method, body, ...fetchOptions } = opts
 
-  // if we are on the server, we need to pass the cookie header from the request headers to the api
-  // if we are on the client, we need to pass the cookie header from the browser cookies to the api
-  const sessionHeader = process.server ? useRequestHeaders(['cookie']) : { cookie: `mod_auth_openidc_session=${useCookie('mod_auth_openidc_session').value}` }
-
   const _query = computed(() => {
     const val = toValue(query) || {}
     val.backendUrl = useAppConfig().backendUrl
@@ -45,13 +41,12 @@ export function useTTData<T>(path: MaybeRefOrGetter<string>, opts: UseApiDataOpt
   })
 
   const _fetchOptions = reactive(fetchOptions)
-  const _headers = computed(() => {
-    return {
-      ...sessionHeader,
-      ...headersToObject(toValue(headers)),
-      ...(process.dev ? DEV_TT_HEADERS : {}),
-    }
-  })
+
+  const _headers = {
+    ...(process.dev ? DEV_TT_HEADERS : {}),
+    ...useRequestHeaders(['cookie']),
+    ...headersToObject(toValue(headers)),
+  }
 
   const _endpointFetchOptions: EndpointFetchOptions = reactive({
     path: _path,

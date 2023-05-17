@@ -1,7 +1,10 @@
 import destr from 'destr'
+import { useLogger } from '@nuxt/kit'
 import type { FetchError } from 'ofetch'
 
 import type { EndpointFetchOptions } from '../../composables/use-tt'
+
+const logger = useLogger('tt-api')
 
 export default defineEventHandler(async (event) => {
   let _body = await readBody<EndpointFetchOptions>(event)
@@ -21,9 +24,13 @@ export default defineEventHandler(async (event) => {
       baseURL,
       query,
       headers,
+      cookies: parseCookies(event),
       body,
+      onRequest(context) {
+        logger.info('onRequest', context)
+      },
       onRequestError(context) {
-        console.log('onRequestError', context)
+        logger.error('onRequestError', context)
       },
     })
   } catch (err) {
