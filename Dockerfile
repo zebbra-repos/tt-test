@@ -1,7 +1,7 @@
 # see https://docs.docker.com/engine/reference/builder/#understand-how-arg-and-from-interact
 ARG NODE_VERSION=node:18.16.0
 
-FROM $NODE_VERSION AS dependency-base
+FROM $NODE_VERSION AS builder
 
 # create destination directory
 RUN mkdir -p /app
@@ -12,8 +12,6 @@ COPY package.json .
 COPY yarn.lock .
 RUN yarn install --frozen-lockfile
 
-FROM dependency-base AS production-base
-
 # build will also take care of building
 # if necessary
 COPY . .
@@ -21,7 +19,7 @@ RUN yarn build
 
 FROM $NODE_VERSION AS production
 
-COPY --from=production-base /app/.output /app/.output
+COPY --from=builder /app/.output /app/.output
 
 # Service hostname
 ENV NUXT_HOST=0.0.0.0
